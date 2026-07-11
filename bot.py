@@ -6,7 +6,7 @@ import aiohttp
 from datetime import datetime
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -19,9 +19,6 @@ DEV_USERNAME = "RobiEntertainment"
 SMS_API_URL = "https://api.paglahost.shop/Custom_SMS/api.php"
 SMS_API_KEY = "Shuvo55356"
 LOG_CHANNEL = -1001234567890  # আপনার লগ চ্যানেল আইডি
-CHANNEL_LINK = "https://t.me/your_channel"
-FB_LINK = "https://facebook.com/your_page"
-CHANNEL_USERNAME = "@your_channel_username"
 # =================================================
 
 logging.basicConfig(level=logging.INFO)
@@ -61,32 +58,14 @@ async def init_db():
 
 # ---------- নম্বর ফরম্যাটিং (API-উপযোগী) ----------
 def format_phone_number(raw: str) -> tuple:
-    """
-    API-তে পাঠানোর উপযোগী ১১ ডিজিটের ০-দিয়ে-শুরু নম্বর তৈরি করে।
-    রিটার্ন: (formatted_number, is_valid)
-    """
-    # সব ফাঁকা, ড্যাশ, প্লাস বাদ
+    """API-তে পাঠানোর উপযোগী ১১ ডিজিটের ০-দিয়ে-শুরু নম্বর তৈরি করে।"""
     cleaned = re.sub(r'[\s\-+]', '', raw.strip())
-    
-    # যদি ৮৮০ দিয়ে শুরু হয়, বাদ দাও
     if cleaned.startswith('880'):
         cleaned = cleaned[3:]
-    
-    # যদি ০ দিয়ে শুরু হয় এবং দৈর্ঘ্য ১১ ও সব ডিজিট হয়
     if cleaned.startswith('0') and len(cleaned) == 11 and cleaned.isdigit():
         return cleaned, True
-    
-    # যদি ১ দিয়ে শুরু হয় এবং দৈর্ঘ্য ১০ হয়, তবে ০ যোগ করি
     if cleaned.startswith('1') and len(cleaned) == 10 and cleaned.isdigit():
         return '0' + cleaned, True
-    
-    # যদি ১ দিয়ে শুরু হয় এবং দৈর্ঘ্য ১১ হয়, তাহলে প্রথম ডিজিট বাদ দিই? কিন্তু সেটা ভুল হতে পারে, তাই invalid
-    # আরও কিছু ফরম্যাট চেষ্টা: যদি ১১ ডিজিট হয় এবং ০ দিয়ে শুরু না হয়, তাহলে ০ যোগ করি? 
-    # উদাহরণ: "1827572551" (১০ ডিজিট) উপরে হ্যান্ডেল করা হয়েছে। 
-    # যদি "01827572551" ইতিমধ্যে ০ দিয়ে শুরু এবং ১১ ডিজিট, তাহলে উপরে সত্য।
-    # যদি "18275725511" (১১ ডিজিট, ১ দিয়ে) – এটা অবৈধ, কারণ ১১ ডিজিটের বাংলাদেশি নম্বর ০ দিয়ে শুরু হয়।
-    
-    # কোনো মিল না পেলে invalid
     return cleaned, False
 
 # ---------- কিবোর্ড ----------
@@ -110,14 +89,6 @@ admin_kb = ReplyKeyboardMarkup(
     ],
     resize_keyboard=True,
     persistent=True
-)
-
-join_kb = InlineKeyboardMarkup(
-    inline_keyboard=[
-        [InlineKeyboardButton(text="📢 Join Channel", url=CHANNEL_LINK)],
-        [InlineKeyboardButton(text="👍 Like Facebook Page", url=FB_LINK)],
-        [InlineKeyboardButton(text="✅ I Have Joined", callback_data="check_join")]
-    ]
 )
 
 # ---------- FSM ----------
@@ -157,18 +128,8 @@ async def is_logged_in_and_active(user_id):
                 return True
     return False
 
-async def is_joined(user_id):
-    if user_id == ADMIN_ID:
-        return True
-    try:
-        member = await bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
-        if member.status in ['member', 'administrator', 'creator', 'restricted']:
-            return True
-    except Exception:
-        return False
-    return False
-
 async def proceed_to_login(chat_id, user_first_name, state):
+    """লগইন প্রক্রিয়া শুরু করে (ইউজারকে username চাওয়া)"""
     async with aiosqlite.connect("bot_database.db") as db:
         async with db.execute("SELECT status FROM users WHERE user_id = ?", (chat_id,)) as cursor:
             row = await cursor.fetchone()
@@ -178,6 +139,7 @@ async def proceed_to_login(chat_id, user_first_name, state):
                     return
                 await bot.send_message(chat_id, f"👋 Welcome back {user_first_name}!", reply_markup=user_kb)
                 return
+    # নতুন ইউজার – লগইন ফর্ম
     await bot.send_message(chat_id, "🔒 **Login Required**\n\nPlease enter your **Username**:", reply_markup=ReplyKeyboardRemove())
     await state.set_state(AuthState.wait_username)
 
@@ -186,28 +148,16 @@ async def proceed_to_login(chat_id, user_first_name, state):
 async def start_command(message: types.Message, state: FSMContext):
     await state.clear()
     user_id = message.from_user.id
+
+    # অ্যাডমিন চেক
     if user_id == ADMIN_ID:
         await message.answer("👑 **Admin Panel**\nWelcome back, Admin!", reply_markup=admin_kb)
         return
-    if not await is_joined(user_id):
-        text = ("⚠️ **Welcome to BNCT SMS BOT!**\n\n"
-                "Before using the bot, you must complete the following steps:\n"
-                "1️⃣ Join our Telegram Channel.\n"
-                "2️⃣ Like our Facebook Page.\n\n"
-                "After doing both, click the **'✅ I Have Joined'** button below.")
-        await message.answer(text, reply_markup=join_kb)
-        return
+
+    # সরাসরি লগইন প্রক্রিয়া (কোনো চ্যানেল/পেজ চেক নেই)
     await proceed_to_login(user_id, message.from_user.first_name, state)
 
-@dp.callback_query(F.data == "check_join")
-async def check_join_callback(call: types.CallbackQuery, state: FSMContext):
-    user_id = call.from_user.id
-    if await is_joined(user_id):
-        await call.message.delete()
-        await proceed_to_login(user_id, call.from_user.first_name, state)
-    else:
-        await call.answer("❌ You haven't joined the Telegram channel yet! Please join first.", show_alert=True)
-
+# ---------- অন্যান্য কমান্ড ----------
 @dp.message(Command("admin"))
 async def admin_cmd(message: types.Message, state: FSMContext):
     await state.clear()
@@ -238,7 +188,7 @@ async def my_profile(message: types.Message, state: FSMContext):
                     parse_mode="Markdown"
                 )
 
-# ---------- 📱 এসএমএস পাঠানো (আপডেটেড) ----------
+# ---------- 📱 এসএমএস পাঠানো ----------
 @dp.message(F.text == "🚀 Send SMS")
 async def start_sms_flow(message: types.Message, state: FSMContext):
     await state.clear()
@@ -266,9 +216,8 @@ async def process_number(message: types.Message, state: FSMContext):
             f"Please enter a valid 11-digit Bangladeshi number starting with **0** (e.g. 01827572551).\n"
             f"Your input: `{raw}`"
         )
-        # Stay in the same state to let user try again
         return
-    
+
     await state.update_data(number=formatted)
     await message.answer(f"✅ Number set to: `{formatted}`\n\n💬 Now enter your **Message**:", parse_mode="Markdown")
     await state.set_state(SMSState.waiting_for_message)
@@ -298,7 +247,7 @@ async def process_message(message: types.Message, state: FSMContext):
             async with session.get(SMS_API_URL, params=params) as resp:
                 raw_text = await resp.text()
                 api_response_text = raw_text
-                
+
                 try:
                     json_data = await resp.json()
                     log_details = f"JSON: {json_data}"
@@ -361,7 +310,7 @@ async def process_message(message: types.Message, state: FSMContext):
     except Exception as e:
         logging.error(f"Log channel error: {e}")
 
-# ---------- রিডিম ও অন্যান্য ----------
+# ---------- রিডিম ----------
 @dp.message(F.text == "🎁 Redeem Code")
 async def ask_redeem(message: types.Message, state: FSMContext):
     await state.clear()
