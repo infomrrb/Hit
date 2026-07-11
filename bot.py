@@ -1,6 +1,6 @@
 import asyncio
 import logging
-import os
+import re
 import aiosqlite
 import aiohttp
 from datetime import datetime
@@ -12,21 +12,16 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 
 # ================== কনফিগারেশন ==================
-# 📌 প্রোডাকশনে .env ফাইল ব্যবহার করুন (সুরক্ষার জন্য)
-# .env ফাইল তৈরি করে সেখানে BOT_TOKEN, ADMIN_ID ইত্যাদি দিন।
-# অথবা নিচের লাইনে সরাসরি আপনার তথ্য দিন (কিন্তু কোড কাউকে দেখাবেন না)।
-
-BOT_TOKEN = "8072096171:AAF0UBOlXnyQNBjczNeeFVDCaiExja1xiF0"  # আপনার টোকেন
-ADMIN_ID = 1967494059  # আপনার ID
+BOT_TOKEN = "8072096171:AAF0UBOlXnyQNBjczNeeFVDCaiExja1xiF0"
+ADMIN_ID = 1967494059
 ADMIN_USERNAME = "@RobiEntertainment"
 DEV_USERNAME = "RobiEntertainment"
-SMS_API_URL = "https://api.paglahost.shop/Custom_SMS/api.php"  # শুধু বেস URL
+SMS_API_URL = "https://api.paglahost.shop/Custom_SMS/api.php"
 SMS_API_KEY = "Shuvo55356"
-LOG_CHANNEL = -1001234567890  # লগ চ্যানেল ID (integer)
+LOG_CHANNEL = -1001234567890  # আপনার লগ চ্যানেল আইডি
 CHANNEL_LINK = "https://t.me/your_channel"
 FB_LINK = "https://facebook.com/your_page"
 CHANNEL_USERNAME = "@your_channel_username"
-
 # =================================================
 
 logging.basicConfig(level=logging.INFO)
@@ -64,23 +59,35 @@ async def init_db():
         )
         await db.commit()
 
-# ---------- হেল্পার: নম্বর ফরম্যাট ----------
-def format_phone_number(number: str) -> str:
-    """বাংলাদেশি নম্বর ফরম্যাট করে (+88 যোগ করে)"""
-    number = number.strip().replace(" ", "").replace("-", "")
-    if number.startswith("+"):
-        return number
-    if number.startswith("0"):
-        number = number[1:]  # প্রথম 0 বাদ
-    if number.startswith("88"):
-        number = number[2:]
-    # যদি 11 ডিজিট হয় (01XXXXXXXXX) তাহলে +88 যোগ করি
-    if len(number) == 11 and number.startswith("1"):
-        return "+88" + number
-    # যদি 10 ডিজিট হয় (1XXXXXXXXX) তাহলে +880 যোগ করি
-    if len(number) == 10 and number.startswith("1"):
-        return "+880" + number
-    return number  # কোনোটাই না হলে যেমন আছে তেমনি পাঠাই
+# ---------- নম্বর ফরম্যাটিং (API-উপযোগী) ----------
+def format_phone_number(raw: str) -> tuple:
+    """
+    API-তে পাঠানোর উপযোগী ১১ ডিজিটের ০-দিয়ে-শুরু নম্বর তৈরি করে।
+    রিটার্ন: (formatted_number, is_valid)
+    """
+    # সব ফাঁকা, ড্যাশ, প্লাস বাদ
+    cleaned = re.sub(r'[\s\-+]', '', raw.strip())
+    
+    # যদি ৮৮০ দিয়ে শুরু হয়, বাদ দাও
+    if cleaned.startswith('880'):
+        cleaned = cleaned[3:]
+    
+    # যদি ০ দিয়ে শুরু হয় এবং দৈর্ঘ্য ১১ ও সব ডিজিট হয়
+    if cleaned.startswith('0') and len(cleaned) == 11 and cleaned.isdigit():
+        return cleaned, True
+    
+    # যদি ১ দিয়ে শুরু হয় এবং দৈর্ঘ্য ১০ হয়, তবে ০ যোগ করি
+    if cleaned.startswith('1') and len(cleaned) == 10 and cleaned.isdigit():
+        return '0' + cleaned, True
+    
+    # যদি ১ দিয়ে শুরু হয় এবং দৈর্ঘ্য ১১ হয়, তাহলে প্রথম ডিজিট বাদ দিই? কিন্তু সেটা ভুল হতে পারে, তাই invalid
+    # আরও কিছু ফরম্যাট চেষ্টা: যদি ১১ ডিজিট হয় এবং ০ দিয়ে শুরু না হয়, তাহলে ০ যোগ করি? 
+    # উদাহরণ: "1827572551" (১০ ডিজিট) উপরে হ্যান্ডেল করা হয়েছে। 
+    # যদি "01827572551" ইতিমধ্যে ০ দিয়ে শুরু এবং ১১ ডিজিট, তাহলে উপরে সত্য।
+    # যদি "18275725511" (১১ ডিজিট, ১ দিয়ে) – এটা অবৈধ, কারণ ১১ ডিজিটের বাংলাদেশি নম্বর ০ দিয়ে শুরু হয়।
+    
+    # কোনো মিল না পেলে invalid
+    return cleaned, False
 
 # ---------- কিবোর্ড ----------
 user_kb = ReplyKeyboardMarkup(
@@ -246,16 +253,24 @@ async def start_sms_flow(message: types.Message, state: FSMContext):
                 await message.answer(f"❌ You don't have enough credits. Please use a Redeem Code or contact Admin {ADMIN_USERNAME}.")
                 return
 
-    await message.answer("📱 Please enter the **Phone Number** (e.g. 017XXXXXX):")
+    await message.answer("📱 Please enter the **Phone Number** (e.g. 018XXXXXXXX, 017XXXXXXXX):")
     await state.set_state(SMSState.waiting_for_number)
 
 @dp.message(SMSState.waiting_for_number)
 async def process_number(message: types.Message, state: FSMContext):
-    raw_number = message.text.strip()
-    # ফরম্যাটিং করে নিচ্ছি
-    formatted_number = format_phone_number(raw_number)
-    await state.update_data(number=formatted_number)
-    await message.answer(f"✅ Number set to: `{formatted_number}`\n\n💬 Now enter your **Message**:", parse_mode="Markdown")
+    raw = message.text.strip()
+    formatted, valid = format_phone_number(raw)
+    if not valid:
+        await message.answer(
+            f"❌ Invalid number format!\n\n"
+            f"Please enter a valid 11-digit Bangladeshi number starting with **0** (e.g. 01827572551).\n"
+            f"Your input: `{raw}`"
+        )
+        # Stay in the same state to let user try again
+        return
+    
+    await state.update_data(number=formatted)
+    await message.answer(f"✅ Number set to: `{formatted}`\n\n💬 Now enter your **Message**:", parse_mode="Markdown")
     await state.set_state(SMSState.waiting_for_message)
 
 @dp.message(SMSState.waiting_for_message)
@@ -267,7 +282,6 @@ async def process_message(message: types.Message, state: FSMContext):
 
     await message.answer(f"⏳ Sending SMS to `{number}`...\n*Please wait...*", parse_mode="Markdown")
 
-    # 🔥 API প্যারামিটার তৈরি
     params = {
         "key": SMS_API_KEY,
         "number": number,
@@ -279,26 +293,22 @@ async def process_message(message: types.Message, state: FSMContext):
     log_details = ""
 
     try:
-        timeout = aiohttp.ClientTimeout(total=15)  # টাইমআউট ১৫ সেকেন্ড
+        timeout = aiohttp.ClientTimeout(total=15)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(SMS_API_URL, params=params) as resp:
                 raw_text = await resp.text()
                 api_response_text = raw_text
                 
-                # ১. JSON চেক করি
                 try:
                     json_data = await resp.json()
                     log_details = f"JSON: {json_data}"
-                    
-                    # আপনার API রেসপন্সে "status":"success" আছে, সেটা দেখি
                     if json_data.get("status") == "success":
                         success = True
                         api_response_text = json_data.get("message", "Success")
                     else:
                         success = False
                         api_response_text = json_data.get("message", "API returned non-success status")
-                except Exception as json_err:
-                    # ২. JSON না পারলে টেক্সট চেক করি
+                except:
                     log_details = f"Plain Text: {raw_text}"
                     if resp.status == 200 and "error" not in raw_text.lower() and "invalid" not in raw_text.lower():
                         success = True
@@ -315,7 +325,6 @@ async def process_message(message: types.Message, state: FSMContext):
         log_details = f"Exception: {str(e)}"
         success = False
 
-    # ⚡ ব্যালেন্স আপডেট (শুধু সফল হলে)
     if success:
         async with aiosqlite.connect("bot_database.db") as db:
             async with db.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,)) as cur:
@@ -338,7 +347,6 @@ async def process_message(message: types.Message, state: FSMContext):
 
     await state.clear()
 
-    # 📨 লগ চ্যানেলে বিস্তারিত পাঠাই
     log_text = (
         f"📝 **SMS LOG**\n\n"
         f"👤 **User ID:** `{user_id}`\n"
