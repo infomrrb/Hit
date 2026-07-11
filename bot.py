@@ -11,33 +11,31 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 
-# ================== কনফিগারেশন (এখানে আপনার তথ্য দিন) ==================
-# 🚨 নিচের লাইনগুলো আপনার নিজের তথ্য দিয়ে প্রতিস্থাপন করুন
+# ================== কনফিগারেশন ==================
+# 📌 প্রোডাকশনে .env ফাইল ব্যবহার করুন (সুরক্ষার জন্য)
+# .env ফাইল তৈরি করে সেখানে BOT_TOKEN, ADMIN_ID ইত্যাদি দিন।
+# অথবা নিচের লাইনে সরাসরি আপনার তথ্য দিন (কিন্তু কোড কাউকে দেখাবেন না)।
 
-BOT_TOKEN = "8072096171:AAF0UBOlXnyQNBjczNeeFVDCaiExja1xiF0"                     # আপনার বট টোকেন
-ADMIN_ID = 1967494059                                # আপনার টেলিগ্রাম ID
-ADMIN_USERNAME = "@RobiEntertainment"                # অ্যাডমিন ইউজারনেম (সাপোর্টের জন্য)
-DEV_USERNAME = "RobiEntertainment"                   # ডেভেলপারের নাম (প্রোফাইলে দেখাবে)
-SMS_API_URL = "https://api.paglahost.shop/Custom_SMS/api.php?key=⚠️&number=0160&msg=Hello"                # SMS API এর URL
-SMS_API_KEY = "Shuvo55356"                # SMS API কী
-LOG_CHANNEL = -1001234567890                         # লগ পাঠানোর চ্যানেল ID (integer)
-CHANNEL_LINK = "https://t.me/your_channel"           # জয়েন করতে চ্যানেল লিংক
-FB_LINK = "https://facebook.com/your_page"           # ফেসবুক পেইজ লিংক
-CHANNEL_USERNAME = "@your_channel_username"          # চ্যানেলের ইউজারনেম (@সহ)
+BOT_TOKEN = "8072096171:AAF0UBOlXnyQNBjczNeeFVDCaiExja1xiF0"  # আপনার টোকেন
+ADMIN_ID = 1967494059  # আপনার ID
+ADMIN_USERNAME = "@RobiEntertainment"
+DEV_USERNAME = "RobiEntertainment"
+SMS_API_URL = "https://api.paglahost.shop/Custom_SMS/api.php"  # শুধু বেস URL
+SMS_API_KEY = "Shuvo55356"
+LOG_CHANNEL = -1001234567890  # লগ চ্যানেল ID (integer)
+CHANNEL_LINK = "https://t.me/your_channel"
+FB_LINK = "https://facebook.com/your_page"
+CHANNEL_USERNAME = "@your_channel_username"
 
-# ===================================================================
+# =================================================
 
-# লগিং সেটআপ
 logging.basicConfig(level=logging.INFO)
-
-# বট ও ডিসপ্যাচার
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-# ---------- ডেটাবেস ইনিশিয়ালাইজেশন ----------
+# ---------- ডেটাবেস ----------
 async def init_db():
     async with aiosqlite.connect("bot_database.db") as db:
-        # ইউজার টেবিল
         await db.execute("""CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
             login_username TEXT,
@@ -45,30 +43,44 @@ async def init_db():
             join_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             status TEXT DEFAULT 'active'
         )""")
-        # অ্যাকাউন্ট টেবিল (লগইন তথ্য)
         await db.execute("""CREATE TABLE IF NOT EXISTS accounts (
             username TEXT PRIMARY KEY,
             password TEXT,
             telegram_id INTEGER
         )""")
-        # রিডিম কোড টেবিল
         await db.execute("""CREATE TABLE IF NOT EXISTS redeem_codes (
             code TEXT PRIMARY KEY,
             amount INTEGER,
             usages INTEGER
         )""")
-        # রিডিম ইতিহাস
         await db.execute("""CREATE TABLE IF NOT EXISTS redeem_history (
             user_id INTEGER,
             code TEXT,
             PRIMARY KEY (user_id, code)
         )""")
-        # অ্যাডমিনকে ইউজার টেবিলে যোগ করি (যদি না থাকে)
         await db.execute(
             "INSERT OR IGNORE INTO users (user_id, login_username, balance, status) VALUES (?, 'Admin', 9999, 'active')",
             (ADMIN_ID,)
         )
         await db.commit()
+
+# ---------- হেল্পার: নম্বর ফরম্যাট ----------
+def format_phone_number(number: str) -> str:
+    """বাংলাদেশি নম্বর ফরম্যাট করে (+88 যোগ করে)"""
+    number = number.strip().replace(" ", "").replace("-", "")
+    if number.startswith("+"):
+        return number
+    if number.startswith("0"):
+        number = number[1:]  # প্রথম 0 বাদ
+    if number.startswith("88"):
+        number = number[2:]
+    # যদি 11 ডিজিট হয় (01XXXXXXXXX) তাহলে +88 যোগ করি
+    if len(number) == 11 and number.startswith("1"):
+        return "+88" + number
+    # যদি 10 ডিজিট হয় (1XXXXXXXXX) তাহলে +880 যোগ করি
+    if len(number) == 10 and number.startswith("1"):
+        return "+880" + number
+    return number  # কোনোটাই না হলে যেমন আছে তেমনি পাঠাই
 
 # ---------- কিবোর্ড ----------
 user_kb = ReplyKeyboardMarkup(
@@ -101,7 +113,7 @@ join_kb = InlineKeyboardMarkup(
     ]
 )
 
-# ---------- FSM স্টেট ----------
+# ---------- FSM ----------
 class AuthState(StatesGroup):
     wait_username = State()
     wait_password = State()
@@ -127,9 +139,8 @@ class AdminState(StatesGroup):
     acc_user = State()
     acc_pass = State()
 
-# ---------- হেল্পার ফাংশন ----------
+# ---------- চেক ফাংশন ----------
 async def is_logged_in_and_active(user_id):
-    """চেক করে ইউজার লগইন করেছে এবং active কিনা (অ্যাডমিন সবসময় True)"""
     if user_id == ADMIN_ID:
         return True
     async with aiosqlite.connect("bot_database.db") as db:
@@ -140,7 +151,6 @@ async def is_logged_in_and_active(user_id):
     return False
 
 async def is_joined(user_id):
-    """চেক করে ইউজার চ্যানেলে জয়েন করেছে কিনা (অ্যাডমিনের জন্য স্কিপ)"""
     if user_id == ADMIN_ID:
         return True
     try:
@@ -148,12 +158,10 @@ async def is_joined(user_id):
         if member.status in ['member', 'administrator', 'creator', 'restricted']:
             return True
     except Exception:
-        # কোনো কারণে চেক করতে না পারলে false রিটার্ন করি
         return False
     return False
 
 async def proceed_to_login(chat_id, user_first_name, state):
-    """লগইন প্রক্রিয়া শুরু করে (ইউজারকে username চাওয়া)"""
     async with aiosqlite.connect("bot_database.db") as db:
         async with db.execute("SELECT status FROM users WHERE user_id = ?", (chat_id,)) as cursor:
             row = await cursor.fetchone()
@@ -161,26 +169,19 @@ async def proceed_to_login(chat_id, user_first_name, state):
                 if row[0] == 'banned':
                     await bot.send_message(chat_id, f"⛔ You are banned. Contact Admin: {ADMIN_USERNAME}", reply_markup=ReplyKeyboardRemove())
                     return
-                # ইতিমধ্যে লগইন করা ইউজার
                 await bot.send_message(chat_id, f"👋 Welcome back {user_first_name}!", reply_markup=user_kb)
                 return
-
-    # নতুন ইউজার – লগইন ফর্ম দেখাই
     await bot.send_message(chat_id, "🔒 **Login Required**\n\nPlease enter your **Username**:", reply_markup=ReplyKeyboardRemove())
     await state.set_state(AuthState.wait_username)
 
-# ---------- /start কমান্ড ----------
+# ---------- /start ----------
 @dp.message(Command("start"))
 async def start_command(message: types.Message, state: FSMContext):
     await state.clear()
     user_id = message.from_user.id
-
-    # অ্যাডমিন চেক
     if user_id == ADMIN_ID:
         await message.answer("👑 **Admin Panel**\nWelcome back, Admin!", reply_markup=admin_kb)
         return
-
-    # জয়েন চেক
     if not await is_joined(user_id):
         text = ("⚠️ **Welcome to BNCT SMS BOT!**\n\n"
                 "Before using the bot, you must complete the following steps:\n"
@@ -189,10 +190,8 @@ async def start_command(message: types.Message, state: FSMContext):
                 "After doing both, click the **'✅ I Have Joined'** button below.")
         await message.answer(text, reply_markup=join_kb)
         return
-
     await proceed_to_login(user_id, message.from_user.first_name, state)
 
-# ---------- জয়েন চেক কলব্যাক ----------
 @dp.callback_query(F.data == "check_join")
 async def check_join_callback(call: types.CallbackQuery, state: FSMContext):
     user_id = call.from_user.id
@@ -202,20 +201,17 @@ async def check_join_callback(call: types.CallbackQuery, state: FSMContext):
     else:
         await call.answer("❌ You haven't joined the Telegram channel yet! Please join first.", show_alert=True)
 
-# ---------- /admin কমান্ড ----------
 @dp.message(Command("admin"))
 async def admin_cmd(message: types.Message, state: FSMContext):
     await state.clear()
     if message.from_user.id == ADMIN_ID:
         await message.answer("👑 **Admin Panel**", reply_markup=admin_kb)
 
-# ---------- ব্যাক বাটন ----------
 @dp.message(F.text == "⬅️ Back")
 async def back_u(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("Switched to User Mode.", reply_markup=user_kb)
 
-# ---------- প্রোফাইল ----------
 @dp.message(F.text == "👤 My Profile")
 async def my_profile(message: types.Message, state: FSMContext):
     await state.clear()
@@ -235,7 +231,7 @@ async def my_profile(message: types.Message, state: FSMContext):
                     parse_mode="Markdown"
                 )
 
-# ---------- এসএমএস পাঠানো ----------
+# ---------- 📱 এসএমএস পাঠানো (আপডেটেড) ----------
 @dp.message(F.text == "🚀 Send SMS")
 async def start_sms_flow(message: types.Message, state: FSMContext):
     await state.clear()
@@ -255,8 +251,11 @@ async def start_sms_flow(message: types.Message, state: FSMContext):
 
 @dp.message(SMSState.waiting_for_number)
 async def process_number(message: types.Message, state: FSMContext):
-    await state.update_data(number=message.text.strip())
-    await message.answer("💬 Enter **Message**:")
+    raw_number = message.text.strip()
+    # ফরম্যাটিং করে নিচ্ছি
+    formatted_number = format_phone_number(raw_number)
+    await state.update_data(number=formatted_number)
+    await message.answer(f"✅ Number set to: `{formatted_number}`\n\n💬 Now enter your **Message**:", parse_mode="Markdown")
     await state.set_state(SMSState.waiting_for_message)
 
 @dp.message(SMSState.waiting_for_message)
@@ -268,58 +267,93 @@ async def process_message(message: types.Message, state: FSMContext):
 
     await message.answer(f"⏳ Sending SMS to `{number}`...\n*Please wait...*", parse_mode="Markdown")
 
-    # API কল
-    params = {"key": SMS_API_KEY, "number": number, "msg": sms_text}
+    # 🔥 API প্যারামিটার তৈরি
+    params = {
+        "key": SMS_API_KEY,
+        "number": number,
+        "msg": sms_text
+    }
+
     success = False
-    api_res = "No response"
-    log_status = ""
+    api_response_text = "No response"
+    log_details = ""
 
     try:
-        timeout = aiohttp.ClientTimeout(total=10)
+        timeout = aiohttp.ClientTimeout(total=15)  # টাইমআউট ১৫ সেকেন্ড
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(SMS_API_URL, params=params) as resp:
-                api_res = await resp.text()
-                # সাধারণত API সফল হলে 200 এবং error কিংবা invalid শব্দ থাকবে না
-                if resp.status == 200 and "error" not in api_res.lower() and "invalid" not in api_res.lower():
-                    success = True
+                raw_text = await resp.text()
+                api_response_text = raw_text
+                
+                # ১. JSON চেক করি
+                try:
+                    json_data = await resp.json()
+                    log_details = f"JSON: {json_data}"
+                    
+                    # আপনার API রেসপন্সে "status":"success" আছে, সেটা দেখি
+                    if json_data.get("status") == "success":
+                        success = True
+                        api_response_text = json_data.get("message", "Success")
+                    else:
+                        success = False
+                        api_response_text = json_data.get("message", "API returned non-success status")
+                except Exception as json_err:
+                    # ২. JSON না পারলে টেক্সট চেক করি
+                    log_details = f"Plain Text: {raw_text}"
+                    if resp.status == 200 and "error" not in raw_text.lower() and "invalid" not in raw_text.lower():
+                        success = True
+                        api_response_text = raw_text
+                    else:
+                        success = False
+                        api_response_text = raw_text
+    except asyncio.TimeoutError:
+        api_response_text = "❌ API Timeout (Server not responding)"
+        log_details = "Timeout Error"
+        success = False
     except Exception as e:
-        api_res = str(e)
+        api_response_text = f"❌ Error: {str(e)}"
+        log_details = f"Exception: {str(e)}"
+        success = False
 
-    # ব্যালেন্স আপডেট
+    # ⚡ ব্যালেন্স আপডেট (শুধু সফল হলে)
     if success:
         async with aiosqlite.connect("bot_database.db") as db:
-            # ডাবল চেক যে ব্যালেন্স >= 1
             async with db.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,)) as cur:
                 bal_row = await cur.fetchone()
                 if bal_row and bal_row[0] >= 1:
                     await db.execute("UPDATE users SET balance = balance - 1 WHERE user_id = ?", (user_id,))
                     await db.commit()
-                    await message.answer(f"✅ **SMS Sent Successfully!**\n💰 1 Credit deducted.\n\n*(API: {api_res})*", parse_mode="Markdown")
-                    log_status = "✅ Success"
+                    await message.answer(
+                        f"✅ **SMS Sent Successfully!**\n💰 1 Credit deducted.\n\n📩 API Reply: `{api_response_text}`",
+                        parse_mode="Markdown"
+                    )
                 else:
-                    await message.answer("❌ Insufficient credits after re-check. Please try again.")
-                    log_status = "❌ Failed (insufficient balance)"
                     success = False
+                    await message.answer("❌ Insufficient credits after re-check. Please try again.")
     else:
-        await message.answer(f"❌ **Failed to send SMS.** No credits deducted.\n\n⚠️ **API Server Error:** `{api_res}`", parse_mode="Markdown")
-        log_status = f"❌ Failed\n⚠️ Error: `{api_res}`"
+        await message.answer(
+            f"❌ **Failed to send SMS.** No credits deducted.\n\n⚠️ **Server Response:**\n`{api_response_text}`",
+            parse_mode="Markdown"
+        )
 
     await state.clear()
 
-    # লগ চ্যানেলে পাঠাই
+    # 📨 লগ চ্যানেলে বিস্তারিত পাঠাই
     log_text = (
-        f"📝 **NEW SMS LOG**\n\n"
-        f"👤 **Sender ID:** `{user_id}`\n"
-        f"📱 **Target Number:** `{number}`\n"
+        f"📝 **SMS LOG**\n\n"
+        f"👤 **User ID:** `{user_id}`\n"
+        f"📱 **Number:** `{number}`\n"
         f"💬 **Message:**\n{sms_text}\n\n"
-        f"🚦 **Status:** {log_status}"
+        f"🚦 **Status:** {'✅ Success' if success else '❌ Failed'}\n"
+        f"📡 **Response:**\n`{api_response_text}`\n\n"
+        f"🔍 **Details:** {log_details}"
     )
     try:
         await bot.send_message(chat_id=LOG_CHANNEL, text=log_text, parse_mode="Markdown")
     except Exception as e:
-        logging.error(f"Failed to send log to channel: {e}")
+        logging.error(f"Log channel error: {e}")
 
-# ---------- রিডিম কোড ----------
+# ---------- রিডিম ও অন্যান্য ----------
 @dp.message(F.text == "🎁 Redeem Code")
 async def ask_redeem(message: types.Message, state: FSMContext):
     await state.clear()
@@ -334,14 +368,12 @@ async def process_redeem(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
 
     async with aiosqlite.connect("bot_database.db") as db:
-        # চেক করি ইতিমধ্যে ব্যবহার করেছে কিনা
         async with db.execute("SELECT 1 FROM redeem_history WHERE user_id = ? AND code = ?", (user_id, code)) as cur:
             if await cur.fetchone():
                 await message.answer("❌ You have already used this code.")
                 await state.clear()
                 return
 
-        # কোড বৈধ কিনা
         async with db.execute("SELECT amount, usages FROM redeem_codes WHERE code = ?", (code,)) as cur:
             row = await cur.fetchone()
             if not row or row[1] <= 0:
@@ -350,34 +382,29 @@ async def process_redeem(message: types.Message, state: FSMContext):
                 return
 
             amount = row[0]
-            # ব্যালেন্স যোগ করি
             await db.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, user_id))
-            # ব্যবহার সংখ্যা কমাই
             await db.execute("UPDATE redeem_codes SET usages = usages - 1 WHERE code = ?", (code,))
-            # ইতিহাসে যোগ করি
             await db.execute("INSERT INTO redeem_history (user_id, code) VALUES (?, ?)", (user_id, code))
             await db.commit()
 
     await message.answer(f"🎉 **Code Redeemed!**\n✅ You got +{amount} Credits.")
     await state.clear()
 
-# ---------- রেফারেল ----------
 @dp.message(F.text == "👥 Referral")
 async def referral_info(message: types.Message, state: FSMContext):
     await state.clear()
     if not await is_logged_in_and_active(message.from_user.id):
         return
-    await message.answer(f"👥 **Referral System**\n\nCurrently disabled for Private Mode. Ask your friends to contact Admin ({ADMIN_USERNAME}) for accounts.")
+    await message.answer(f"👥 **Referral System**\n\nCurrently disabled. Ask friends to contact Admin ({ADMIN_USERNAME}).")
 
-# ---------- সাপোর্ট ----------
 @dp.message(F.text == "☎️ Support")
 async def support(message: types.Message, state: FSMContext):
     await state.clear()
     if not await is_logged_in_and_active(message.from_user.id):
         return
-    await message.answer(f"☎️ **Support**\n\nFor any issues or to buy credits, please message the Admin:\n👨‍💻 **{ADMIN_USERNAME}**")
+    await message.answer(f"☎️ **Support**\n\nFor issues or buying credits, contact Admin:\n👨‍💻 **{ADMIN_USERNAME}**")
 
-# ---------- লগইন হ্যান্ডলার ----------
+# ---------- লগইন ----------
 @dp.message(AuthState.wait_username)
 async def process_username(message: types.Message, state: FSMContext):
     await state.update_data(username=message.text.strip())
@@ -395,14 +422,11 @@ async def process_password(message: types.Message, state: FSMContext):
         async with db.execute("SELECT password, telegram_id FROM accounts WHERE username = ?", (username,)) as cursor:
             row = await cursor.fetchone()
             if row and row[0] == password:
-                # চেক করি এই অ্যাকাউন্ট অন্য কেউ ব্যবহার করছে কিনা
                 if row[1] is not None and row[1] != user_id:
                     await message.answer(f"❌ Account linked to another device.\nContact Admin: {ADMIN_USERNAME}")
                     await state.clear()
                     return
-                # আপডেট করি
                 await db.execute("UPDATE accounts SET telegram_id = ? WHERE username = ?", (user_id, username))
-                # ইউজার টেবিলে যোগ করি (যদি না থাকে)
                 await db.execute(
                     "INSERT OR IGNORE INTO users (user_id, login_username, balance) VALUES (?, ?, 0)",
                     (user_id, username)
@@ -415,7 +439,7 @@ async def process_password(message: types.Message, state: FSMContext):
                 )
     await state.clear()
 
-# ---------- অ্যাডমিন কমান্ড ----------
+# ---------- অ্যাডমিন ----------
 @dp.message(F.text == "🔐 Create Account", F.from_user.id == ADMIN_ID)
 async def create_acc(message: types.Message, state: FSMContext):
     await state.clear()
@@ -472,7 +496,6 @@ async def stats_cmd(message: types.Message, state: FSMContext):
         f"🔐 Created Accounts: {total_accounts[0]}"
     )
 
-# ---------- অ্যাডমিন স্টেট হ্যান্ডলার ----------
 @dp.message(AdminState.acc_user)
 async def acc_u(message: types.Message, state: FSMContext):
     await state.update_data(u=message.text.strip())
@@ -515,7 +538,6 @@ async def add_a(message: types.Message, state: FSMContext):
         await state.clear()
         return
     async with aiosqlite.connect("bot_database.db") as db:
-        # চেক করি ইউজার আছে কিনা
         async with db.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,)) as cur:
             if not await cur.fetchone():
                 await message.answer(f"❌ User ID {user_id} not found.")
@@ -613,7 +635,7 @@ async def bc_msg(message: types.Message, state: FSMContext):
         try:
             await bot.send_message(row[0], f"📢 **Admin Message:**\n\n{broadcast_text}")
             success += 1
-            await asyncio.sleep(0.05)  # rate limit
+            await asyncio.sleep(0.05)
         except Exception:
             pass
     await message.answer(f"✅ Sent to {success} users.")
@@ -656,7 +678,7 @@ async def c_use(message: types.Message, state: FSMContext):
             await message.answer(f"❌ Code '{code}' already exists.")
     await state.clear()
 
-# ---------- মেইন ফাংশন ----------
+# ---------- মেইন ----------
 async def main():
     await init_db()
     logging.info("✅ Bot started successfully!")
