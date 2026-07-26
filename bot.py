@@ -252,7 +252,7 @@ async def get_total_sms(user_id):
             row = await cur.fetchone()
             return row[0] if row else 0
 
-# ===================== SEND SMS =====================
+# ===================== SEND SMS (DNS ফিক্স সহ) =====================
 async def cmd_sms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
@@ -316,8 +316,18 @@ async def sms_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         params = {"key": SMS_API_KEY, "number": number, "msg": msg_text}
-        async with aiohttp.ClientSession() as session:
-            async with session.get(SMS_API_URL, params=params, timeout=30) as resp:
+        
+        # DNS ফিক্স
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        
+        resolver = AsyncResolver(nameservers=["8.8.8.8", "1.1.1.1"])
+        connector = aiohttp.TCPConnector(ssl=ssl_context, resolver=resolver, timeout=60, ttl_dns_cache=300)
+        timeout = aiohttp.ClientTimeout(total=90)
+        
+        async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+            async with session.get(SMS_API_URL, params=params, timeout=45) as resp:
                 response_text = await resp.text()
                 try:
                     data = await resp.json()
@@ -362,7 +372,7 @@ async def sms_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     context.user_data.clear()
 
-# ===================== SMS BOMBER =====================
+# ===================== SMS BOMBER (DNS ফিক্স সহ) =====================
 async def cmd_bomber(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "💣 **SMS Bomber**\n\n"
@@ -431,15 +441,14 @@ async def bomber_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     failed_count = 0
     api_results = []
     
-    # DNS এবং SSL কনফিগারেশন (সমস্যা সমাধান)
+    # DNS ফিক্স
     ssl_context = ssl.create_default_context()
     ssl_context.check_hostname = False
     ssl_context.verify_mode = ssl.CERT_NONE
     
-    # কাস্টম DNS রেজলভার (গুগল DNS)
     resolver = AsyncResolver(nameservers=["8.8.8.8", "1.1.1.1"])
-    connector = aiohttp.TCPConnector(ssl=ssl_context, resolver=resolver, timeout=30)
-    timeout = aiohttp.ClientTimeout(total=60)
+    connector = aiohttp.TCPConnector(ssl=ssl_context, resolver=resolver, timeout=60, ttl_dns_cache=300)
+    timeout = aiohttp.ClientTimeout(total=90)
     
     async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
         for i, api in enumerate(WORKING_APIS, 1):
@@ -461,7 +470,7 @@ async def bomber_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await asyncio.sleep(random.uniform(0.8, 1.5))
                     
                     if api['method'] == 'POST':
-                        async with session.post(api['url'], json=body, headers=headers, timeout=15) as resp:
+                        async with session.post(api['url'], json=body, headers=headers, timeout=30) as resp:
                             status = resp.status
                             text = await resp.text()
                             
@@ -472,7 +481,7 @@ async def bomber_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 api_failed += 1
                                 failed_count += 1
                     else:
-                        async with session.get(api['url'], headers=headers, timeout=15) as resp:
+                        async with session.get(api['url'], headers=headers, timeout=30) as resp:
                             if resp.status in [200, 201, 202, 204]:
                                 api_success += 1
                                 success_count += 1
