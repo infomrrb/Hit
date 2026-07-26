@@ -15,7 +15,7 @@ from aiohttp.resolver import AsyncResolver
 
 # ===================== কনফিগারেশন =====================
 # Railway-তে Environment Variable সেট করতে পারেন, নাহলে হার্ডকোডেড কাজ করবে
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8072096171:AAF0UBOlXnyQNBjczNeeFVDCaiExja1xiF0)
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8072096171:AAF0UBOlXnyQNBjczNeeFVDCaiExja1xiF0) 
 ADMIN_ID = int(os.getenv("ADMIN_ID", "1967494059"))
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "RobiEntertainment")
 OWNER_USERNAME = os.getenv("OWNER_USERNAME", "RobiEntertainment")
