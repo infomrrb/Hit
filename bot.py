@@ -49,46 +49,6 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # ===================== ডাটাবেস =====================
-async def main():
-    try:
-        print("="*60)
-        print("🔥 SMS BOMBER BOT STARTING...")
-        print(f"✅ APIs Loaded: {len(WORKING_APIS)}")
-        print(f"👑 Admin ID: {ADMIN_ID}")
-        print("="*60)
-        
-        await init_db()
-        
-        application = (
-            Application.builder()
-            .token(BOT_TOKEN)
-            .connect_timeout(60.0)
-            .read_timeout(60.0)
-            .pool_timeout(60.0)
-            .build()
-        )
-        
-        # 🔥 কনফ্লিক্ট এড়াতে ওয়েবহুক ডিলিট (ড্রপ পেন্ডিং আপডেট)
-        await application.bot.delete_webhook(drop_pending_updates=True)
-        # 🔥 ডিলিট কাজ করতে ২ সেকেন্ড অপেক্ষা (গুরুত্বপূর্ণ)
-        await asyncio.sleep(2)
-        
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-        
-        await application.initialize()
-        await application.start()
-        await application.updater.start_polling()
-        
-        print("✅ Bot is RUNNING!")
-        print("="*60)
-        
-        while True:
-            await asyncio.sleep(1)
-            
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        logger.error(f"Main error: {e}")
 async def init_db():
     try:
         async with aiosqlite.connect(DB_PATH) as db:
@@ -139,16 +99,22 @@ def get_admin_keyboard():
 def get_back_keyboard():
     return ReplyKeyboardMarkup([["🔙 Back"]], resize_keyboard=True)
 
-# ===================== স্টার্ট =====================
+# ===================== স্টার্ট (ব্যালেন্স ফিক্স সহ) =====================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    user_id = user.id
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)", (user.id, user.username or user.first_name))
+        await db.execute("INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)", (user_id, user.username or user.first_name))
+        # 🔥 ব্যালেন্স ০ থাকলে ১০ করে দিন
+        cursor = await db.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
+        row = await cursor.fetchone()
+        if row is None or row[0] is None or row[0] == 0:
+            await db.execute("UPDATE users SET balance = 10 WHERE user_id = ?", (user_id,))
         await db.commit()
-    if user.id == ADMIN_ID:
-        await update.message.reply_text(f"👑 **Admin Panel**\nWelcome Admin {user.first_name}!\n🆔 ID: `{user.id}`", parse_mode="Markdown", reply_markup=get_admin_keyboard())
+    if user_id == ADMIN_ID:
+        await update.message.reply_text(f"👑 **Admin Panel**\nWelcome Admin {user.first_name}!\n🆔 ID: `{user_id}`", parse_mode="Markdown", reply_markup=get_admin_keyboard())
     else:
-        await update.message.reply_text(f"🔥 **Welcome {user.first_name}!**\n🆔 ID: `{user.id}`\n💰 Balance: 10 Credits\n📡 APIs: {len(WORKING_APIS)}", parse_mode="Markdown", reply_markup=get_main_keyboard())
+        await update.message.reply_text(f"🔥 **Welcome {user.first_name}!**\n🆔 ID: `{user_id}`\n💰 Balance: 10 Credits\n📡 APIs: {len(WORKING_APIS)}", parse_mode="Markdown", reply_markup=get_main_keyboard())
 
 async def get_total_sms(user_id):
     async with aiosqlite.connect(DB_PATH) as db:
@@ -190,7 +156,6 @@ async def sms_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response_text = ""
     try:
         params = {"key": SMS_API_KEY, "number": number, "msg": msg_text}
-        # 🔥 DNS ফিক্স (গুগল DNS + SSL বন্ধ)
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
@@ -260,7 +225,6 @@ async def bomber_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     success_count = 0
     failed_count = 0
     api_results = []
-    # DNS ফিক্স
     ssl_context = ssl.create_default_context()
     ssl_context.check_hostname = False
     ssl_context.verify_mode = ssl.CERT_NONE
@@ -565,6 +529,7 @@ async def main():
         await init_db()
         application = Application.builder().token(BOT_TOKEN).connect_timeout(60.0).read_timeout(60.0).pool_timeout(60.0).build()
         await application.bot.delete_webhook(drop_pending_updates=True)
+        await asyncio.sleep(3)  # কনফ্লিক্ট সমাধান
         application.add_handler(CommandHandler("start", start))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         await application.initialize(); await application.start(); await application.updater.start_polling()
