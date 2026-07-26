@@ -49,6 +49,46 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # ===================== ডাটাবেস =====================
+async def main():
+    try:
+        print("="*60)
+        print("🔥 SMS BOMBER BOT STARTING...")
+        print(f"✅ APIs Loaded: {len(WORKING_APIS)}")
+        print(f"👑 Admin ID: {ADMIN_ID}")
+        print("="*60)
+        
+        await init_db()
+        
+        application = (
+            Application.builder()
+            .token(BOT_TOKEN)
+            .connect_timeout(60.0)
+            .read_timeout(60.0)
+            .pool_timeout(60.0)
+            .build()
+        )
+        
+        # 🔥 কনফ্লিক্ট এড়াতে ওয়েবহুক ডিলিট (ড্রপ পেন্ডিং আপডেট)
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        # 🔥 ডিলিট কাজ করতে ২ সেকেন্ড অপেক্ষা (গুরুত্বপূর্ণ)
+        await asyncio.sleep(2)
+        
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling()
+        
+        print("✅ Bot is RUNNING!")
+        print("="*60)
+        
+        while True:
+            await asyncio.sleep(1)
+            
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        logger.error(f"Main error: {e}")
 async def init_db():
     try:
         async with aiosqlite.connect(DB_PATH) as db:
