@@ -14,8 +14,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from aiohttp.resolver import AsyncResolver
 
 # ===================== কনফিগারেশন =====================
-# Railway-তে Environment Variable সেট করতে পারেন, নাহলে হার্ডকোডেড কাজ করবে
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8072096171:AAF0UBOlXnyQNBjczNeeFVDCaiExja1xiF0") 
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8072096171:AAF0UBOlXnyQNBjczNeeFVDCaiExja1xiF0")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "1967494059"))
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "RobiEntertainment")
 OWNER_USERNAME = os.getenv("OWNER_USERNAME", "RobiEntertainment")
@@ -1233,17 +1232,16 @@ async def main():
         
         await init_db()
         
-        # ========== টাইমআউট সহ অ্যাপ্লিকেশন বিল্ড ==========
         application = (
             Application.builder()
             .token(BOT_TOKEN)
             .connect_timeout(60.0)
             .read_timeout(60.0)
-            .pool_timeout(60.0)        # কনফ্লিক্ট রোধে টাইমআউট বাড়ানো
+            .pool_timeout(60.0)
             .build()
         )
         
-        # ========== কনফ্লিক্ট এড়াতে ওয়েবহুক ডিলিট ==========
+        # কনফ্লিক্ট এড়াতে ওয়েবহুক ডিলিট
         await application.bot.delete_webhook(drop_pending_updates=True)
         
         application.add_handler(CommandHandler("start", start))
@@ -1256,7 +1254,6 @@ async def main():
         print("✅ Bot is RUNNING!")
         print("="*60)
         
-        # বটকে চালু রাখতে infinite loop
         while True:
             await asyncio.sleep(1)
             
