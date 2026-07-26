@@ -105,7 +105,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = user.id
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)", (user_id, user.username or user.first_name))
-        # 🔥 ব্যালেন্স ০ থাকলে ১০ করে দিন
         cursor = await db.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
         row = await cursor.fetchone()
         if row is None or row[0] is None or row[0] == 0:
@@ -160,7 +159,8 @@ async def sms_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
         resolver = AsyncResolver(nameservers=["8.8.8.8", "1.1.1.1"])
-        connector = aiohttp.TCPConnector(ssl=ssl_context, resolver=resolver, family=socket.AF_INET, timeout=60)
+        # 🔥 timeout প্যারামিটার বাদ
+        connector = aiohttp.TCPConnector(ssl=ssl_context, resolver=resolver, family=socket.AF_INET)
         timeout = aiohttp.ClientTimeout(total=90)
         async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
             async with session.get(SMS_API_URL, params=params, timeout=45) as resp:
@@ -229,7 +229,8 @@ async def bomber_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ssl_context.check_hostname = False
     ssl_context.verify_mode = ssl.CERT_NONE
     resolver = AsyncResolver(nameservers=["8.8.8.8", "1.1.1.1"])
-    connector = aiohttp.TCPConnector(ssl=ssl_context, resolver=resolver, family=socket.AF_INET, timeout=60)
+    # 🔥 timeout প্যারামিটার বাদ
+    connector = aiohttp.TCPConnector(ssl=ssl_context, resolver=resolver, family=socket.AF_INET)
     timeout = aiohttp.ClientTimeout(total=90)
     async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
         for i, api in enumerate(WORKING_APIS, 1):
