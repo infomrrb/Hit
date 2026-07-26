@@ -7,15 +7,18 @@ import json
 import random
 import ssl
 import csv
+import socket
 from datetime import datetime, timedelta
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from aiohttp.resolver import AsyncResolver
 
 # ===================== কনফিগারেশন =====================
-BOT_TOKEN = "8072096171:AAF0UBOlXnyQNBjczNeeFVDCaiExja1xiF0"
-ADMIN_ID = 1967494059
-ADMIN_USERNAME = "RobiEntertainment"
-OWNER_USERNAME = "RobiEntertainment"
+# Railway-তে Environment Variable সেট করতে পারেন, নাহলে হার্ডকোডেড কাজ করবে
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8072096171:AAF0UBOlXnyQNBjczNeeFVDCaiExja1xiF0)
+ADMIN_ID = int(os.getenv("ADMIN_ID", "1967494059"))
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "RobiEntertainment")
+OWNER_USERNAME = os.getenv("OWNER_USERNAME", "RobiEntertainment")
 
 # SMS API
 SMS_API_URL = "https://api.paglahost.shop/Custom_SMS/api.php"
@@ -66,7 +69,6 @@ logger = logging.getLogger(__name__)
 async def init_db():
     try:
         async with aiosqlite.connect(DB_PATH) as db:
-            # ইউজার টেবিল
             await db.execute("""CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
                 username TEXT,
@@ -76,8 +78,6 @@ async def init_db():
                 join_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 status TEXT DEFAULT 'active'
             )""")
-            
-            # রিডিম কোড টেবিল
             await db.execute("""CREATE TABLE IF NOT EXISTS redeem_codes (
                 code TEXT PRIMARY KEY,
                 amount INTEGER,
@@ -85,16 +85,12 @@ async def init_db():
                 created_by INTEGER,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )""")
-            
-            # রিডিম হিস্ট্রি
             await db.execute("""CREATE TABLE IF NOT EXISTS redeem_history (
                 user_id INTEGER,
                 code TEXT,
                 redeemed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (user_id, code)
             )""")
-            
-            # API ইউসেজ টেবিল
             await db.execute("""CREATE TABLE IF NOT EXISTS api_usage (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 api_name TEXT,
@@ -102,8 +98,6 @@ async def init_db():
                 success INTEGER,
                 usage_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )""")
-            
-            # API স্ট্যাটস টেবিল
             await db.execute("""CREATE TABLE IF NOT EXISTS api_stats (
                 api_name TEXT PRIMARY KEY,
                 total_calls INTEGER DEFAULT 0,
@@ -111,8 +105,6 @@ async def init_db():
                 total_failed INTEGER DEFAULT 0,
                 last_used TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )""")
-            
-            # ইউজার API স্ট্যাটস
             await db.execute("""CREATE TABLE IF NOT EXISTS user_api_stats (
                 user_id INTEGER,
                 api_name TEXT,
@@ -120,8 +112,6 @@ async def init_db():
                 last_used TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (user_id, api_name)
             )""")
-            
-            # লগ টেবিল
             await db.execute("""CREATE TABLE IF NOT EXISTS admin_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 admin_id INTEGER,
@@ -130,11 +120,8 @@ async def init_db():
                 details TEXT,
                 log_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )""")
-            
-            # ডেমো কোড
             await db.execute("INSERT OR IGNORE INTO redeem_codes (code, amount, usages, created_by) VALUES ('FREE50', 50, 100, ?)", (ADMIN_ID,))
             await db.execute("INSERT OR IGNORE INTO redeem_codes (code, amount, usages, created_by) VALUES ('WELCOME10', 10, 200, ?)", (ADMIN_ID,))
-            
             await db.commit()
             logger.info("✅ Database initialized")
     except Exception as e:
@@ -171,7 +158,6 @@ async def track_api_usage(api_name, user_id, success):
                 (api_name, 1 if success else 0, 0 if success else 1,
                  1 if success else 0, 0 if success else 1)
             )
-            
             await db.execute(
                 """INSERT INTO user_api_stats (user_id, api_name, total_calls) 
                    VALUES (?, ?, 1) 
@@ -180,7 +166,6 @@ async def track_api_usage(api_name, user_id, success):
                    last_used = CURRENT_TIMESTAMP""",
                 (user_id, api_name)
             )
-            
             await db.execute(
                 "INSERT INTO api_usage (api_name, user_id, success) VALUES (?, ?, ?)",
                 (api_name, user_id, 1 if success else 0)
@@ -447,12 +432,17 @@ async def bomber_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     failed_count = 0
     api_results = []
     
+    # DNS এবং SSL কনফিগারেশন (সমস্যা সমাধান)
     ssl_context = ssl.create_default_context()
     ssl_context.check_hostname = False
     ssl_context.verify_mode = ssl.CERT_NONE
-    connector = aiohttp.TCPConnector(ssl=ssl_context)
     
-    async with aiohttp.ClientSession(connector=connector) as session:
+    # কাস্টম DNS রেজলভার (গুগল DNS)
+    resolver = AsyncResolver(nameservers=["8.8.8.8", "1.1.1.1"])
+    connector = aiohttp.TCPConnector(ssl=ssl_context, resolver=resolver, timeout=30)
+    timeout = aiohttp.ClientTimeout(total=60)
+    
+    async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
         for i, api in enumerate(WORKING_APIS, 1):
             api_success = 0
             api_failed = 0
@@ -785,7 +775,6 @@ async def admin_export_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
             async with db.execute("SELECT * FROM users") as cur:
                 users = await cur.fetchall()
         
-        # CSV ফাইল তৈরি
         csv_file = f"users_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         with open(csv_file, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
@@ -808,7 +797,6 @@ async def admin_reset_limits(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if update.effective_user.id != ADMIN_ID:
         return
     
-    # API লিমিট রিসেট
     global API_LIMITS
     API_LIMITS = {
         "daily_limit": 1000,
@@ -1245,7 +1233,19 @@ async def main():
         
         await init_db()
         
-        application = Application.builder().token(BOT_TOKEN).build()
+        # ========== টাইমআউট সহ অ্যাপ্লিকেশন বিল্ড ==========
+        application = (
+            Application.builder()
+            .token(BOT_TOKEN)
+            .connect_timeout(60.0)
+            .read_timeout(60.0)
+            .pool_timeout(60.0)        # কনফ্লিক্ট রোধে টাইমআউট বাড়ানো
+            .build()
+        )
+        
+        # ========== কনফ্লিক্ট এড়াতে ওয়েবহুক ডিলিট ==========
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        
         application.add_handler(CommandHandler("start", start))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         
@@ -1256,6 +1256,7 @@ async def main():
         print("✅ Bot is RUNNING!")
         print("="*60)
         
+        # বটকে চালু রাখতে infinite loop
         while True:
             await asyncio.sleep(1)
             
