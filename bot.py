@@ -233,6 +233,12 @@ def get_back_keyboard():
     keyboard = [["🔙 Back"]]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
+def get_admin_choice_keyboard():
+    keyboard = [
+        ["👑 Admin Panel", "👤 User Menu"]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
 async def is_user_banned(user_id):
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute("SELECT status FROM users WHERE user_id = ?", (user_id,)) as cur:
@@ -253,9 +259,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if user_id == ADMIN_ID:
         await update.message.reply_text(
-            f"👑 **Admin Panel**\n\nWelcome {user.first_name}!\n🆔 ID: `{user_id}`\n\n📌 Select an option:",
+            f"👑 **Welcome Admin {user.first_name}!**\n\nআপনি চাইলে অ্যাডমিন প্যানেল বা ইউজার মেনু ব্যবহার করতে পারেন।",
             parse_mode="Markdown",
-            reply_markup=get_admin_keyboard()
+            reply_markup=get_admin_choice_keyboard()
         )
     else:
         await update.message.reply_text(
@@ -883,7 +889,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     message = update.message.text
     logger.info(f"📩 Message from {user_id}: {message}")
+    
+    # অ্যাডমিনের জন্য চয়েস মেনু
     if user_id == ADMIN_ID:
+        if message == "👑 Admin Panel":
+            await update.message.reply_text("👑 **Admin Panel**", parse_mode="Markdown", reply_markup=get_admin_keyboard())
+            return
+        elif message == "👤 User Menu":
+            await update.message.reply_text("👤 **User Menu**", parse_mode="Markdown", reply_markup=get_main_keyboard())
+            return
+
         if message in ["💰 Add Credit", "➖ Remove Credit", "🚫 Ban User", "✅ Unban User",
                        "📣 Broadcast", "🎟️ Create Code", "💰 Total Balance", "🏆 Top Users",
                        "📤 Export Data", "🔄 Reset Limits", "🗑️ Clear Logs", "📜 Admin Logs",
@@ -928,13 +943,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if context.user_data.get('admin_state'):
             await admin_state_handler(update, context)
             return
+    
+    # ব্যান চেক
     if await is_user_banned(user_id):
         await update.message.reply_text("🚫 Your account is banned!")
         return
+    
+    # ইউজার ব্যাক
     if message == "🔙 Back":
         await update.message.reply_text("🏠 Main Menu", reply_markup=get_main_keyboard())
         context.user_data.clear()
         return
+    
+    # ইউজার মেনু
     if message == "📨 Send SMS":
         await cmd_sms(update, context)
     elif message == "💣 SMS Bomber":
