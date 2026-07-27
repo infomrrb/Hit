@@ -344,19 +344,15 @@ async def sms_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     context.user_data.clear()
 
+# ===================== SMS Bomber (ফ্রি) =====================
 async def cmd_bomber(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if await is_user_banned(user_id):
         await update.message.reply_text("🚫 আপনি ব্যান্ড!")
         return
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,)) as cur:
-            row = await cur.fetchone()
-            if not row or row[0] < 1:
-                await update.message.reply_text("❌ বোম্বিং করতে কমপক্ষে ১ ক্রেডিট লাগে!", reply_markup=get_main_keyboard())
-                return
+    # ব্যালেন্স চেক করা হচ্ছে না – বোম্বিং ফ্রি
     await update.message.reply_text(
-        "💣 **এসএমএস বোম্বার**\n\nটার্গেট নম্বর দিন (০১XXXXXXXXX):\n📡 এপিআই: {}\n⚠️ প্রতি এপিআই সর্বোচ্চ ২০ বার".format(len(WORKING_APIS)),
+        "💣 **এসএমএস বোম্বার (ফ্রি)**\n\nটার্গেট নম্বর দিন (০১XXXXXXXXX):\n📡 এপিআই: {}\n⚠️ প্রতি এপিআই সর্বোচ্চ ২০ বার".format(len(WORKING_APIS)),
         parse_mode="Markdown",
         reply_markup=get_back_keyboard()
     )
@@ -391,20 +387,14 @@ async def bomber_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
         return
     total_sms = len(WORKING_APIS) * amount
+
+    # ✅ বোম্বিং ফ্রি – শুধু বোম্বিং কাউন্ট বাড়ানো হবে
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,)) as cur:
-            row = await cur.fetchone()
-            if not row or row[0] < total_sms:
-                await update.message.reply_text(
-                    f"❌ পর্যাপ্ত ক্রেডিট নেই! প্রয়োজন: {total_sms}, আপনার আছে: {row[0] if row else 0}",
-                    reply_markup=get_main_keyboard()
-                )
-                context.user_data.clear()
-                return
-        await db.execute("UPDATE users SET balance = balance - ?, total_bombing = total_bombing + 1 WHERE user_id = ?", (total_sms, user_id))
+        await db.execute("UPDATE users SET total_bombing = total_bombing + 1 WHERE user_id = ?", (user_id,))
         await db.commit()
+
     msg = await update.message.reply_text(
-        f"⏳ **বোম্বিং শুরু!**\n\n📱 টার্গেট: `{number}`\n📡 এপিআই: {len(WORKING_APIS)}\n💥 প্রতি এপিআই: {amount}\n📊 মোট: {total_sms}\n⏰ দয়া করে অপেক্ষা করুন...",
+        f"⏳ **বোম্বিং শুরু! (ফ্রি)**\n\n📱 টার্গেট: `{number}`\n📡 এপিআই: {len(WORKING_APIS)}\n💥 প্রতি এপিআই: {amount}\n📊 মোট: {total_sms}\n⏰ দয়া করে অপেক্ষা করুন...",
         parse_mode="Markdown"
     )
     success_count = 0
@@ -463,7 +453,7 @@ async def bomber_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if done % 10 == 0 or done == total_sms:
                     try:
                         await msg.edit_text(
-                            f"⏳ **বোম্বিং চলছে...**\n\n📱 টার্গেট: `{number}`\n✅ সফল: {success_count}\n❌ ব্যর্থ: {failed_count}\n📊 অগ্রগতি: {done}/{total_sms}",
+                            f"⏳ **বোম্বিং চলছে... (ফ্রি)**\n\n📱 টার্গেট: `{number}`\n✅ সফল: {success_count}\n❌ ব্যর্থ: {failed_count}\n📊 অগ্রগতি: {done}/{total_sms}",
                             parse_mode="Markdown"
                         )
                     except:
@@ -485,7 +475,7 @@ async def bomber_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not top_apis_text:
         top_apis_text = "❌ কোনো সফল এপিআই নেই!"
     result_message = (
-        f"✅ **বোম্বিং সম্পূর্ণ!**\n\n"
+        f"✅ **বোম্বিং সম্পূর্ণ! (ফ্রি)**\n\n"
         f"📱 টার্গেট: `{number}`\n"
         f"📡 এপিআই: {len(WORKING_APIS)}\n"
         f"💥 মোট: {total_sms}\n"
@@ -497,6 +487,7 @@ async def bomber_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.edit_text(result_message, parse_mode="Markdown", reply_markup=get_main_keyboard())
     context.user_data.clear()
 
+# ===================== প্রোফাইল, স্ট্যাটস, রিডিম, কন্টাক্ট =====================
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if await is_user_banned(user_id):
